@@ -1,0 +1,3 @@
+[console_scripts]
+deploy-gate = deploy_gate.cli:app
+security-agent = agent.main:cli_entry

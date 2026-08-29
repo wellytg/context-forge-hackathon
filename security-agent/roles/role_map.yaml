@@ -1,0 +1,24 @@
+# Role-to-Capability Map
+#
+# This file is the authoritative privilege boundary for all agent deployments.
+# Each role lists the MAXIMUM set of capabilities that an agent manifest may
+# declare for that role.  An agent's capability_set must be a subset of the
+# capabilities listed here for its declared device_owner_role.
+#
+# Treat this file as append-only in normal operations.  Removing a capability
+# from an existing role is a breaking change and must be reviewed carefully —
+# all deployed manifests for that role must be updated before the change lands.
+
+roles:
+  field_tech:
+    - telemetry_collect
+    - diagnostics_run
+    - update_receive
+    - sensitive_data_read
+
+  monitor:
+    - telemetry_collect
+    - diagnostics_run
+
+  read_only:
+    - telemetry_collect

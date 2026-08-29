@@ -1,0 +1,4 @@
+agent
+deploy_gate
+manifests
+roles
