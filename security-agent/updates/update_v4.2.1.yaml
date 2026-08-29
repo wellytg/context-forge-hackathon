@@ -1,0 +1,17 @@
+# Proposed update: Staff Workstation / monitor-role device — INTENTIONALLY BAD.
+#
+# Changes from a clean monitor baseline:
+#   - fleet_schema_version: "4.2" → "4.2.1"
+#   - capability_set: adds 'update_receive' — a capability the monitor role
+#     does NOT permit (monitor is bounded to telemetry_collect + diagnostics_run).
+#
+# Expected gate result: FAIL — role boundary violation on 'update_receive'.
+
+fleet_schema_version: "4.2.1"
+device_id: "device-099-monitor"
+device_owner_role: "monitor"
+capability_set:
+  - telemetry_collect
+  - diagnostics_run
+  - update_receive
+environment: "production"

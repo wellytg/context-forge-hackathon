@@ -1,0 +1,18 @@
+# Proposed update: field_tech device — version bump only.
+#
+# Changes from baseline (manifests/example_field_tech.yaml):
+#   - fleet_schema_version: "4.2" → "4.2.0"
+#   - device_id: disambiguated to reflect the patch release
+#   - capability_set: unchanged (all four caps are within field_tech's boundary)
+#
+# Expected gate result: PASS — no violations.
+
+fleet_schema_version: "4.2.0"
+device_id: "device-001-field"
+device_owner_role: "field_tech"
+capability_set:
+  - telemetry_collect
+  - diagnostics_run
+  - update_receive
+  - sensitive_data_read
+environment: "production"
