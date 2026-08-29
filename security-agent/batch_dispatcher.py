@@ -5,7 +5,8 @@ Batch Push Dispatcher -- localhost:8743
 Security engineer pushes a universal update to this server.  The agent loops
 through every device in batch_targets.yaml, runs the existing deploy-gate
 check_manifest_update() for each one, and applies the update only to devices
-that PASS.  Devices that FAIL are rejected with a clear violation report.
+that PASS.  Devices that FAIL are rejected with a clear violation report and
+structured recommendations for how to fix the update manifest.
 
 IMPORTANT: No privilege-check logic lives here.  All gating is delegated to:
   - deploy_gate.gate.check_manifest_update()  -- orchestrates the three rules
@@ -16,12 +17,15 @@ Run:
     python batch_dispatcher.py
 
 Endpoints:
-    POST /push   multipart/form-data  field: "update_file" (.yaml)
+    POST /push          multipart/form-data  field: "update_file" (.yaml)
     GET  /health
+    GET  /recommendations   last push rejection report (in-memory, read-only)
 """
 
 from __future__ import annotations
 
+import dataclasses
+import json
 import os
 import shutil
 import sys
@@ -40,7 +44,9 @@ if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
 from deploy_gate.gate import GateResult, check_manifest_update  # noqa: E402
-from roles.loader import load_role_map  # noqa: E402
+from deploy_gate.recommender import build_recommendations         # noqa: E402
+from manifests.loader import load_manifest                        # noqa: E402
+from roles.loader import load_role_map                            # noqa: E402
 
 # Constants
 HOST = "127.0.0.1"          # localhost-only -- never expose to a network interface
@@ -53,6 +59,11 @@ app = FastAPI(
     description="Security-agent deploy-gate batch simulation",
     version="1.0.0",
 )
+
+# In-memory store for the last push's recommendation report.
+# Written at the end of _run_batch(); read by GET /recommendations.
+# None until the first push is received.
+_last_recommendations: dict | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -107,11 +118,39 @@ def _apply_update(proposed: Path, current: Path) -> None:
     os.replace(str(tmp), str(current))
 
 
+def _sidecar_path(manifest_path: Path) -> Path:
+    """Return the rejection sidecar path for a given manifest file."""
+    return manifest_path.with_suffix(".rejection.json")
+
+
+def _write_rejection_sidecar(
+    manifest_path: Path,
+    timestamp: str,
+    violations: list[str],
+    recommendations: list[dict],
+) -> None:
+    """Write a small JSON sidecar next to the manifest for the agent dashboard."""
+    sidecar = _sidecar_path(manifest_path)
+    payload = {
+        "timestamp": timestamp,
+        "violations": violations,
+        "recommendations": recommendations,
+    }
+    sidecar.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _clear_rejection_sidecar(manifest_path: Path) -> None:
+    """Remove the rejection sidecar when a device is successfully updated."""
+    _sidecar_path(manifest_path).unlink(missing_ok=True)
+
+
 def _run_batch(update_template_path: Path) -> dict[str, Any]:
     """Core batch loop -- runs the gate for every target device.
 
     Returns a structured result dict with per-device outcomes and a summary.
     """
+    global _last_recommendations  # noqa: PLW0603
+
     role_map = load_role_map()        # loaded ONCE for the whole batch
     targets = _load_batch_targets()
 
@@ -125,6 +164,10 @@ def _run_batch(update_template_path: Path) -> dict[str, Any]:
     print(f"  Fleet targets   : {len(targets)} device(s)")
     print(f"  Supported vers  : {SUPPORTED_VERSIONS}")
     print(_sep("-"))
+
+    # Timestamp for all sidecars written in this batch run
+    import datetime
+    batch_ts = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         staging = Path(tmp_dir)
@@ -154,9 +197,20 @@ def _run_batch(update_template_path: Path) -> dict[str, Any]:
                 allow_role_change=False,
             )
 
+            # Build recommendations from the already-computed gate result
+            proposed_manifest = load_manifest(proposed)
+            recs = build_recommendations(
+                gate_result,
+                proposed_manifest,
+                role_map,
+                SUPPORTED_VERSIONS,
+            )
+            recs_dicts = [dataclasses.asdict(r) for r in recs]
+
             if gate_result.passed:
-                # PASS: apply update atomically
+                # PASS: apply update atomically, clear any prior rejection sidecar
                 _apply_update(proposed, current)
+                _clear_rejection_sidecar(current)
                 status = "APPLIED"
 
                 print(f"      gate result      : [PASS]")
@@ -169,15 +223,26 @@ def _run_batch(update_template_path: Path) -> dict[str, Any]:
                 print(f"      gate result      : [FAIL]")
                 for v in gate_result.violations:
                     print(f"      violation        : {v}")
+                if recs:
+                    print(f"      recommendation   : {recs[0].fix[:100]}")
                 print(f"      action           : UPDATE BLOCKED -- device unchanged")
+
+                # Write rejection sidecar so the agent dashboard can surface it
+                _write_rejection_sidecar(
+                    current,
+                    timestamp=batch_ts,
+                    violations=gate_result.violations,
+                    recommendations=recs_dicts,
+                )
 
             results.append(
                 {
-                    "device_id": device_id,
-                    "role":      role,
-                    "result":    "PASS" if gate_result.passed else "FAIL",
-                    "status":    status,
-                    "violations": gate_result.violations,
+                    "device_id":       device_id,
+                    "role":            role,
+                    "result":          "PASS" if gate_result.passed else "FAIL",
+                    "status":          status,
+                    "violations":      gate_result.violations,
+                    "recommendations": recs_dicts,
                 }
             )
 
@@ -202,6 +267,24 @@ def _run_batch(update_template_path: Path) -> dict[str, Any]:
     print(_sep("="))
     print()
 
+    # Build and cache the recommendations report for GET /recommendations
+    _last_recommendations = {
+        "last_push_file": update_template_path.name,
+        "devices_total":  len(results),
+        "applied":        applied,
+        "rejected":       rejected,
+        "recommendations": [
+            {
+                "device_id":       r["device_id"],
+                "role":            r["role"],
+                "violations":      r["violations"],
+                "recommendations": r["recommendations"],
+            }
+            for r in results
+            if r["status"] == "REJECTED"
+        ],
+    }
+
     return {
         "update_file":    update_template_path.name,
         "devices_total":  len(results),
@@ -219,6 +302,26 @@ def _run_batch(update_template_path: Path) -> dict[str, Any]:
 async def health() -> dict[str, str]:
     """Liveness check -- confirm the dispatcher is running."""
     return {"status": "ok", "service": "batch-push-dispatcher", "port": str(PORT)}
+
+
+@app.get("/recommendations")
+async def recommendations() -> JSONResponse:
+    """Return the last push's full recommendation report (read-only, in-memory).
+
+    Returns the structured recommendation data from the most recent POST /push,
+    or an empty sentinel if no push has been run yet.  This endpoint is useful
+    for CI scripts that want to poll for fix-it advice after a failed push
+    without re-running the push.
+    """
+    if _last_recommendations is None:
+        return JSONResponse(content={
+            "last_push_file":  None,
+            "devices_total":   0,
+            "applied":         0,
+            "rejected":        0,
+            "recommendations": [],
+        })
+    return JSONResponse(content=_last_recommendations)
 
 
 @app.post("/push")

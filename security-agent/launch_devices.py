@@ -116,7 +116,15 @@ def main() -> None:
         print(f"  {d['port']:<8}  {d['device_id']:<28}  {d['role']}")
     print(_SEP_DOUBLE)
     print()
-    print("  Health check URLs:")
+    print("  Live status dashboards (auto-refresh every 3 s):")
+    for d in DEVICES:
+        print(f"    http://127.0.0.1:{d['port']}/   ({d['device_id']} · {d['role']})")
+    print()
+    print("  JSON status endpoints:")
+    for d in DEVICES:
+        print(f"    http://127.0.0.1:{d['port']}/status")
+    print()
+    print("  Health check:")
     for d in DEVICES:
         print(f"    http://127.0.0.1:{d['port']}/healthz   ({d['role']})")
     print()

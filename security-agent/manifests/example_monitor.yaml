@@ -1,9 +1,6 @@
-# Baseline manifest for Staff Workstation / monitor-role device.
-# This is the currently-deployed configuration that update_v4.2.1.yaml proposes to replace.
-fleet_schema_version: "4.2"
-device_id: "device-099-monitor"
-device_owner_role: "monitor"
+fleet_schema_version: 4.2.0
+device_id: device-099-monitor
+device_owner_role: monitor
 capability_set:
-  - telemetry_collect
-  - diagnostics_run
-environment: "production"
+- telemetry_collect
+environment: production

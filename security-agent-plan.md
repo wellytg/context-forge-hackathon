@@ -1,3 +1,28 @@
+> **Final state — July 2025**
+> This plan was written before implementation. Several details diverged during
+> the build:
+>
+> - Sub-tasks 4–8 are marked `pending` here, but all have been fully
+>   implemented in the codebase.
+> - `launch_devices.py` is an independent launcher script; it has no wire
+>   connection to `batch_dispatcher.py` or `batch_push_client.py` (those are
+>   a separate batch layer).
+> - The agent exposes `/status` (JSON) and `/` (HTML dashboard) in addition
+>   to the capability-gated routes — this was not in the original plan.
+> - `batch_dispatcher.py`, `batch_push_client.py`, and `batch_targets.yaml`
+>   were added as a batch-push simulation layer not described in the plan.
+> - The test suite grew to **66 passing tests** across 8 test files, including
+>   `test_batch_dispatcher.py` and `test_status_endpoint.py` which postdate
+>   this plan.
+>
+> **The authoritative description of the final project state is
+> [`security-agent/README.md`](security-agent/README.md).**
+>
+> The original plan below is preserved as a design-process record.
+
+---
+
+
 # Security Agent — Repo Structure & Safe Deploy Plan
 
 ## Top-Level Overview

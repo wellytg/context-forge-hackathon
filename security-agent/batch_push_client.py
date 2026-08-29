@@ -110,6 +110,17 @@ def push(update_path: Path) -> None:
             f"{marker:<8}  {dev['status']:<10}  {violation}"
         )
 
+        # Print the first recommendation's fix string beneath rejected devices
+        recs = dev.get("recommendations", [])
+        if recs and dev["result"] == "FAIL":
+            fix = recs[0].get("fix", "")
+            if fix:
+                # Wrap to 78 chars, indented 6 spaces
+                import textwrap
+                wrapped = textwrap.fill(fix, width=78, initial_indent="      FIX: ",
+                                        subsequent_indent="           ")
+                print(wrapped)
+
     print(_sep("-"))
     applied  = data.get("applied",  0)
     rejected = data.get("rejected", 0)

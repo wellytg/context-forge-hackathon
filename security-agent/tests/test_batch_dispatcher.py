@@ -235,3 +235,144 @@ class TestSummaryCountsMixedBatch:
         assert result["devices_total"] == 2
         assert result["applied"]  == 1, "only field_tech should be applied"
         assert result["rejected"] == 1, "only monitor should be rejected"
+
+
+# ---------------------------------------------------------------------------
+# Test 4 — recommendations key is present on every device result
+# ---------------------------------------------------------------------------
+
+class TestRecommendationsInBatchResult:
+    """Every device result carries a 'recommendations' key after a batch run."""
+
+    def test_recommendations_key_present_on_all_devices(self, fleet, tmp_path):
+        """recommendations key must exist on every entry — pass or fail."""
+        update = tmp_path / "update_mixed.yaml"
+        _write_update_template(update, version="4.2.0",
+                               caps=["telemetry_collect", "diagnostics_run",
+                                     "update_receive"])
+        result = _run_batch(update)
+
+        for dev in result["device_results"]:
+            assert "recommendations" in dev, (
+                f"'recommendations' key missing for {dev['device_id']}"
+            )
+
+    def test_rejected_device_has_non_empty_recommendations(self, fleet, tmp_path):
+        """A rejected device must have at least one recommendation."""
+        update = tmp_path / "update_bad.yaml"
+        _write_update_template(update, version="4.2.0",
+                               caps=["telemetry_collect", "diagnostics_run",
+                                     "update_receive"])
+        result = _run_batch(update)
+
+        mon_result = next(
+            r for r in result["device_results"] if r["device_id"] == "dev-mon-099"
+        )
+        assert mon_result["status"] == "REJECTED"
+        assert len(mon_result["recommendations"]) >= 1
+
+    def test_rejected_recommendation_violation_type_is_capability_boundary(
+        self, fleet, tmp_path
+    ):
+        update = tmp_path / "update_bad.yaml"
+        _write_update_template(update, version="4.2.0",
+                               caps=["telemetry_collect", "diagnostics_run",
+                                     "update_receive"])
+        result = _run_batch(update)
+
+        mon_result = next(
+            r for r in result["device_results"] if r["device_id"] == "dev-mon-099"
+        )
+        rec = mon_result["recommendations"][0]
+        assert rec["violation_type"] == "capability_boundary"
+
+    def test_passing_device_has_empty_recommendations(self, fleet, tmp_path):
+        """A device that passes must have an empty recommendations list."""
+        update = tmp_path / "update_clean.yaml"
+        _write_update_template(update, version="4.2.0",
+                               caps=["telemetry_collect", "diagnostics_run",
+                                     "update_receive", "sensitive_data_read"])
+        result = _run_batch(update)
+
+        ft_result = next(
+            r for r in result["device_results"] if r["device_id"] == "dev-ft-001"
+        )
+        assert ft_result["status"] == "APPLIED"
+        assert ft_result["recommendations"] == []
+
+    def test_safe_capability_set_excludes_rejected_cap(self, fleet, tmp_path):
+        """safe_capability_set in the recommendation must not include the excess cap."""
+        update = tmp_path / "update_bad.yaml"
+        _write_update_template(update, version="4.2.0",
+                               caps=["telemetry_collect", "diagnostics_run",
+                                     "update_receive"])
+        result = _run_batch(update)
+
+        mon_result = next(
+            r for r in result["device_results"] if r["device_id"] == "dev-mon-099"
+        )
+        rec = mon_result["recommendations"][0]
+        assert "update_receive" not in rec["safe_capability_set"]
+        assert "telemetry_collect" in rec["safe_capability_set"]
+
+
+# ---------------------------------------------------------------------------
+# Test 5 — rejection sidecar lifecycle
+# ---------------------------------------------------------------------------
+
+class TestRejectionSidecarLifecycle:
+    """Dispatcher writes sidecar on REJECT and deletes it on APPLY."""
+
+    def test_sidecar_written_on_rejection(self, fleet, tmp_path):
+        update = tmp_path / "update_bad.yaml"
+        _write_update_template(update, version="4.2.0",
+                               caps=["telemetry_collect", "diagnostics_run",
+                                     "update_receive"])
+        _run_batch(update)
+
+        sidecar = fleet["mon_manifest"].with_suffix(".rejection.json")
+        assert sidecar.exists(), "rejection sidecar must be written for rejected device"
+
+    def test_sidecar_not_written_on_pass(self, fleet, tmp_path):
+        update = tmp_path / "update_clean.yaml"
+        _write_update_template(update, version="4.2.0",
+                               caps=["telemetry_collect"])
+        _run_batch(update)
+
+        sidecar = fleet["ft_manifest"].with_suffix(".rejection.json")
+        assert not sidecar.exists(), (
+            "no rejection sidecar should be written for a passing device"
+        )
+
+    def test_sidecar_deleted_when_device_subsequently_passes(self, fleet, tmp_path):
+        # First: reject the monitor
+        bad_update = tmp_path / "update_bad.yaml"
+        _write_update_template(bad_update, version="4.2.0",
+                               caps=["telemetry_collect", "update_receive"])
+        _run_batch(bad_update)
+
+        sidecar = fleet["mon_manifest"].with_suffix(".rejection.json")
+        assert sidecar.exists(), "pre-condition: sidecar must exist after rejection"
+
+        # Second: clean push — monitor passes
+        clean_update = tmp_path / "update_clean.yaml"
+        _write_update_template(clean_update, version="4.2.0",
+                               caps=["telemetry_collect"])
+        _run_batch(clean_update)
+
+        assert not sidecar.exists(), (
+            "sidecar must be deleted when the device subsequently passes"
+        )
+
+    def test_sidecar_content_has_required_keys(self, fleet, tmp_path):
+        import json
+
+        update = tmp_path / "update_bad.yaml"
+        _write_update_template(update, version="4.2.0",
+                               caps=["telemetry_collect", "update_receive"])
+        _run_batch(update)
+
+        sidecar = fleet["mon_manifest"].with_suffix(".rejection.json")
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
+        for key in ("timestamp", "violations", "recommendations"):
+            assert key in data, f"sidecar missing key: {key}"

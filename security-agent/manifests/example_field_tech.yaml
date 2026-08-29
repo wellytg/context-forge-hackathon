@@ -1,9 +1,8 @@
-fleet_schema_version: "4.2"
-device_id: "device-001-field"
-device_owner_role: "field_tech"
+fleet_schema_version: 4.2.1
+device_id: device-001-field
+device_owner_role: field_tech
 capability_set:
-  - telemetry_collect
-  - diagnostics_run
-  - update_receive
-  - sensitive_data_read
-environment: "production"
+- telemetry_collect
+- diagnostics_run
+- update_receive
+environment: production
