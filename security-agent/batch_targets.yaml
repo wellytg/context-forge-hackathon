@@ -1,0 +1,23 @@
+# Batch Push Target List
+#
+# Represents the fleet roster that will receive a universal update push.
+# Each entry identifies the physical device, the role it holds, the current
+# deployed manifest (the "before" state), and the proposed update manifest
+# (the "after" the security engineer is trying to push).
+#
+# The deploy-gate agent will check EVERY device independently.  Devices whose
+# role boundary is exceeded by the proposed update are REJECTED — the current
+# manifest is never touched for those devices.
+
+batch:
+  - device_id: "device-001-field"
+    role: "field_tech"
+    current_manifest: "manifests/example_field_tech.yaml"
+
+  - device_id: "device-099-monitor"
+    role: "monitor"
+    current_manifest: "manifests/example_monitor.yaml"
+
+  - device_id: "device-042-readonly"
+    role: "read_only"
+    current_manifest: "manifests/example_read_only.yaml"

@@ -1,0 +1,29 @@
+# Universal batch update — v4.2.0  (CLEAN — all 3 devices pass)
+#
+# This is a single update payload that is safe for every role in the fleet.
+# The capability_set is intentionally bounded to the MOST RESTRICTIVE role
+# (read_only only allows telemetry_collect) so that all three devices pass
+# the deploy-gate check.
+#
+# ┌──────────────────────┬────────────────┬───────────────────────────────────┐
+# │ Device               │ Role           │ Expected gate result              │
+# ├──────────────────────┼────────────────┼───────────────────────────────────┤
+# │ device-001-field     │ field_tech     │ PASS — caps within boundary       │
+# │ device-099-monitor   │ monitor        │ PASS — caps within boundary       │
+# │ device-042-readonly  │ read_only      │ PASS — caps within boundary       │
+# └──────────────────────┴────────────────┴───────────────────────────────────┘
+#
+# Role capability boundaries (from roles/role_map.yaml):
+#   field_tech : telemetry_collect, diagnostics_run, update_receive, sensitive_data_read
+#   monitor    : telemetry_collect, diagnostics_run
+#   read_only  : telemetry_collect
+#
+# This update only asserts telemetry_collect — permitted by every role.
+# Version bump to "4.2.0" is in the dispatcher's SUPPORTED_VERSIONS list.
+
+fleet_schema_version: "4.2.0"
+device_id: "__BATCH_PLACEHOLDER__"
+device_owner_role: "__BATCH_PLACEHOLDER__"
+capability_set:
+  - telemetry_collect
+environment: "production"

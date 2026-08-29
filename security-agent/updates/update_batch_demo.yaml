@@ -1,0 +1,24 @@
+# Universal batch update — v4.2.2
+#
+# This is a SINGLE update payload pushed to ALL devices in the fleet.
+# The update bump adds 'update_receive' to every device's capability_set.
+#
+# ┌──────────────────┬────────────────┬──────────────────────────────────────────┐
+# │ Device           │ Role           │ Expected gate result                     │
+# ├──────────────────┼────────────────┼──────────────────────────────────────────┤
+# │ device-001-field │ field_tech     │ PASS — update_receive is within boundary │
+# │ device-099-mon   │ monitor        │ FAIL — monitor role forbids update_recv  │
+# │ device-042-ro    │ read_only      │ FAIL — read_only role forbids update_recv│
+# └──────────────────┴────────────────┴──────────────────────────────────────────┘
+#
+# The security engineer forgot to scope the capability_set per role.
+# deploy-gate catches this before any device is touched.
+
+fleet_schema_version: "4.2.2"
+device_id: "__BATCH_PLACEHOLDER__"
+device_owner_role: "__BATCH_PLACEHOLDER__"
+capability_set:
+  - telemetry_collect
+  - diagnostics_run
+  - update_receive
+environment: "production"
