@@ -1,0 +1,2 @@
+# Security-agent runtime state files (written by dispatcher, never committed)
+*.rejection.json
