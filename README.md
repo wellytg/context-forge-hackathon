@@ -14,7 +14,7 @@ defence, built for the **IBM TechXchange 2026 Dev Day Hackathon** using
 
 ## 📺 Hackathon Submission & Resources
 
-- 🎥 **Video Demo Walkthrough**: [Watch the 3-Minute Demo on YouTube](https://youtu.be/TK1WRUctyhQ)
+- 🎥 **Video Demo Walkthrough**: [Watch the Demo on YouTube](https://youtu.be/z53_IAGWJXo)
 - 📜 **Reusable Build Contract**: [Read `AGENTS.md`](AGENTS.md)
 - 📁 **Bob Task Session Artifacts**: [Browse `bob_sessions/`](bob_sessions/)
 
