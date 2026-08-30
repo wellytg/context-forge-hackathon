@@ -98,12 +98,25 @@ def push(update_path: Path) -> None:
     )
     print(_sep("-"))
 
+    import textwrap
+
     for dev in devices:
-        marker = "[PASS]" if dev["result"] == "PASS" else "[FAIL]"
-        violation = ""
-        if dev["violations"]:
+        result = dev["result"]
+        if result == "PASS":
+            marker = "[PASS]"
+        elif result == "ERROR":
+            marker = "[ERR] "
+        else:
+            marker = "[FAIL]"
+
+        # ERROR devices carry a single "violation" key; FAIL devices use "violations"
+        if result == "ERROR":
+            raw = dev.get("violation", "")
+        elif dev.get("violations"):
             raw = dev["violations"][0]
-            violation = (raw[:63] + "...") if len(raw) > 66 else raw
+        else:
+            raw = ""
+        violation = (raw[:63] + "...") if len(raw) > 66 else raw
 
         print(
             f"  {dev['device_id']:<28} {dev['role']:<14} "
@@ -112,24 +125,46 @@ def push(update_path: Path) -> None:
 
         # Print the first recommendation's fix string beneath rejected devices
         recs = dev.get("recommendations", [])
-        if recs and dev["result"] == "FAIL":
+        if recs and result == "FAIL":
             fix = recs[0].get("fix", "")
             if fix:
-                # Wrap to 78 chars, indented 6 spaces
-                import textwrap
                 wrapped = textwrap.fill(fix, width=78, initial_indent="      FIX: ",
                                         subsequent_indent="           ")
+                print(wrapped)
+
+        # Print the error detail beneath errored devices
+        if result == "ERROR":
+            detail = dev.get("violation", "")
+            if detail:
+                wrapped = textwrap.fill(
+                    detail, width=78,
+                    initial_indent="      ERR: ",
+                    subsequent_indent="           ",
+                )
                 print(wrapped)
 
     print(_sep("-"))
     applied  = data.get("applied",  0)
     rejected = data.get("rejected", 0)
+    errored  = data.get("errored",  0)
     total    = data.get("devices_total", len(devices))
 
-    print(f"  Applied: {applied}   Rejected: {rejected}   Total: {total}")
+    print(f"  Applied: {applied}   Rejected: {rejected}   Errored: {errored}   Total: {total}")
     print(_sep("="))
 
-    if rejected > 0:
+    if errored > 0 and rejected > 0:
+        print(
+            f"\n  [!] {rejected} device(s) were BLOCKED by deploy-gate.\n"
+            f"      {errored} device(s) were SKIPPED due to a misconfiguration\n"
+            f"      (bad manifest path or invalid update file).\n"
+        )
+    elif errored > 0:
+        print(
+            f"\n  [!] {errored} device(s) were SKIPPED due to a misconfiguration\n"
+            f"      (bad manifest path or invalid update file).\n"
+            f"      Fix the batch_targets.yaml or update file and retry.\n"
+        )
+    elif rejected > 0:
         print(
             f"\n  [!] {rejected} device(s) were BLOCKED by deploy-gate.\n"
             f"      The security engineer must correct the privilege mapping\n"

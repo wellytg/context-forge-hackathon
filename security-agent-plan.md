@@ -11,9 +11,14 @@
 >   to the capability-gated routes — this was not in the original plan.
 > - `batch_dispatcher.py`, `batch_push_client.py`, and `batch_targets.yaml`
 >   were added as a batch-push simulation layer not described in the plan.
-> - The test suite grew to **66 passing tests** across 8 test files, including
->   `test_batch_dispatcher.py` and `test_status_endpoint.py` which postdate
->   this plan.
+> - A recommendation engine (`deploy_gate/recommender.py`) and an operator
+>   error-isolation layer were added after the initial build; neither is
+>   described here.
+> - The test suite grew to **125 passing tests** across 12 test files,
+>   including files that postdate this plan entirely
+>   (`test_batch_dispatcher.py`, `test_recommender.py`,
+>   `test_recommendations_endpoint.py`, `test_status_endpoint.py`,
+>   `test_operator_edge_cases.py`).
 >
 > **The authoritative description of the final project state is
 > [`security-agent/README.md`](security-agent/README.md).**

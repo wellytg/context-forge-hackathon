@@ -33,6 +33,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError as _PydanticValidationError
+
 import uvicorn
 import yaml
 from fastapi import FastAPI, HTTPException, UploadFile
@@ -148,6 +150,24 @@ def _run_batch(update_template_path: Path) -> dict[str, Any]:
     """Core batch loop -- runs the gate for every target device.
 
     Returns a structured result dict with per-device outcomes and a summary.
+
+    Per-device error handling
+    -------------------------
+    Three categories of operator misconfiguration are caught per-device so that
+    one bad entry never stops evaluation of the remaining fleet:
+
+    * FileNotFoundError  — current_manifest path in batch_targets.yaml does not
+                           exist on disk (BUG-1).
+    * ValidationError    — update template violates AgentManifest schema (empty
+                           capability_set, missing fleet_schema_version, etc.)
+                           (BUG-2).
+    * yaml.YAMLError /   — update template is malformed YAML or its top-level
+      TypeError            value is not a mapping (BUG-3).
+
+    A device that hits one of these errors is recorded as
+    result="ERROR" / status="SKIPPED" with a human-readable "violation" field.
+    All other exception types still propagate so unexpected failures surface
+    loudly rather than being silently swallowed.
     """
     global _last_recommendations  # noqa: PLW0603
 
@@ -180,31 +200,80 @@ def _run_batch(update_template_path: Path) -> dict[str, Any]:
             print(f"\n  >>  {device_id}  [{role}]")
             print(f"      current manifest : {entry['current_manifest']}")
 
-            # Stamp device-specific values into the universal template
-            proposed = _build_per_device_manifest(
-                template_path=update_template_path,
-                device_id=device_id,
-                role=role,
-                staging_dir=staging,
-            )
+            # ── BUG-3 guard: parse the update template into a per-device file ──
+            # yaml.YAMLError  → syntax error in the update file
+            # TypeError       → top-level YAML value is not a dict (bare scalar)
+            try:
+                proposed = _build_per_device_manifest(
+                    template_path=update_template_path,
+                    device_id=device_id,
+                    role=role,
+                    staging_dir=staging,
+                )
+            except (yaml.YAMLError, TypeError) as exc:
+                msg = f"Update template is invalid: {exc}"
+                print(f"      error            : {msg}")
+                print(f"      action           : SKIPPED -- malformed update file")
+                results.append({
+                    "device_id":       device_id,
+                    "role":            role,
+                    "result":          "ERROR",
+                    "status":          "SKIPPED",
+                    "violation":       msg,
+                    "violations":      [],
+                    "recommendations": [],
+                })
+                continue
 
-            # -- Run the existing gate -- NO duplicate logic here --
-            gate_result: GateResult = check_manifest_update(
-                current_path=str(current),
-                proposed_path=str(proposed),
-                role_map=role_map,
-                supported_versions=SUPPORTED_VERSIONS,
-                allow_role_change=False,
-            )
+            # ── BUG-1 / BUG-2 guard: run the gate ────────────────────────────
+            # FileNotFoundError  → current_manifest path does not exist on disk
+            # ValidationError    → proposed manifest violates AgentManifest schema
+            try:
+                gate_result: GateResult = check_manifest_update(
+                    current_path=str(current),
+                    proposed_path=str(proposed),
+                    role_map=role_map,
+                    supported_versions=SUPPORTED_VERSIONS,
+                    allow_role_change=False,
+                )
 
-            # Build recommendations from the already-computed gate result
-            proposed_manifest = load_manifest(proposed)
-            recs = build_recommendations(
-                gate_result,
-                proposed_manifest,
-                role_map,
-                SUPPORTED_VERSIONS,
-            )
+                # Build recommendations from the already-computed gate result
+                proposed_manifest = load_manifest(proposed)
+                recs = build_recommendations(
+                    gate_result,
+                    proposed_manifest,
+                    role_map,
+                    SUPPORTED_VERSIONS,
+                )
+            except FileNotFoundError as exc:
+                msg = f"Manifest file not found: {exc}"
+                print(f"      error            : {msg}")
+                print(f"      action           : SKIPPED -- manifest path missing")
+                results.append({
+                    "device_id":       device_id,
+                    "role":            role,
+                    "result":          "ERROR",
+                    "status":          "SKIPPED",
+                    "violation":       msg,
+                    "violations":      [],
+                    "recommendations": [],
+                })
+                continue
+            except _PydanticValidationError as exc:
+                msg = f"Update manifest schema invalid: {exc.error_count()} error(s) — {exc.errors()[0]['msg']}"
+                print(f"      error            : {msg}")
+                print(f"      action           : SKIPPED -- invalid update schema")
+                results.append({
+                    "device_id":       device_id,
+                    "role":            role,
+                    "result":          "ERROR",
+                    "status":          "SKIPPED",
+                    "violation":       msg,
+                    "violations":      [],
+                    "recommendations": [],
+                })
+                continue
+
             recs_dicts = [dataclasses.asdict(r) for r in recs]
 
             if gate_result.passed:
@@ -254,7 +323,12 @@ def _run_batch(update_template_path: Path) -> dict[str, Any]:
     print(f"  {'DEVICE ID':<28} {'ROLE':<14} {'RESULT':<8}  ACTION")
     print(_sep("-"))
     for r in results:
-        marker = "[PASS]" if r["result"] == "PASS" else "[FAIL]"
+        if r["result"] == "PASS":
+            marker = "[PASS]"
+        elif r["result"] == "ERROR":
+            marker = "[ERR] "
+        else:
+            marker = "[FAIL]"
         print(
             f"  {r['device_id']:<28} {r['role']:<14} "
             f"{marker:<8}  {r['status']}"
@@ -263,7 +337,8 @@ def _run_batch(update_template_path: Path) -> dict[str, Any]:
 
     applied  = sum(1 for r in results if r["status"] == "APPLIED")
     rejected = sum(1 for r in results if r["status"] == "REJECTED")
-    print(f"  Applied: {applied}   Rejected: {rejected}   Total: {len(results)}")
+    errored  = sum(1 for r in results if r["status"] == "SKIPPED")
+    print(f"  Applied: {applied}   Rejected: {rejected}   Errored: {errored}   Total: {len(results)}")
     print(_sep("="))
     print()
 
@@ -273,6 +348,7 @@ def _run_batch(update_template_path: Path) -> dict[str, Any]:
         "devices_total":  len(results),
         "applied":        applied,
         "rejected":       rejected,
+        "errored":        errored,
         "recommendations": [
             {
                 "device_id":       r["device_id"],
@@ -290,6 +366,7 @@ def _run_batch(update_template_path: Path) -> dict[str, Any]:
         "devices_total":  len(results),
         "applied":        applied,
         "rejected":       rejected,
+        "errored":        errored,
         "device_results": results,
     }
 
@@ -319,6 +396,7 @@ async def recommendations() -> JSONResponse:
             "devices_total":   0,
             "applied":         0,
             "rejected":        0,
+            "errored":         0,
             "recommendations": [],
         })
     return JSONResponse(content=_last_recommendations)
