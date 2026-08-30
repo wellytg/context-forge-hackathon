@@ -1,0 +1,11 @@
+# Edge-case test update: Empty capability_set
+# Demonstrates Pydantic schema validation: an empty capability_set violates the
+# AgentManifest constraint (non-empty list required).  The batch dispatcher
+# catches the ValidationError per-device and records status="SKIPPED" /
+# result="ERROR" without affecting the rest of the fleet.
+
+fleet_schema_version: "4.2.0"
+device_id: "__BATCH_PLACEHOLDER__"
+device_owner_role: "__BATCH_PLACEHOLDER__"
+capability_set: []
+environment: "production"

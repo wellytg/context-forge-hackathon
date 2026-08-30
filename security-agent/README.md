@@ -31,9 +31,13 @@ security-agent/
 ├── manifests/                       # Manifest schema, loader, and example files
 │   ├── schema.py                    # AgentManifest — Pydantic model, canonical shape
 │   ├── loader.py                    # load_manifest() — validates .yaml or .toml
-│   ├── example_field_tech.yaml
-│   ├── example_monitor.yaml
-│   └── example_read_only.yaml
+│   ├── example_field_tech.yaml      # Field Tech (High privilege)
+│   ├── example_monitor.yaml         # Monitor 1 (Mid privilege: telemetry + diagnostics)
+│   ├── example_monitor_02.yaml      # Monitor 2 (Mid privilege: telemetry + diagnostics)
+│   ├── example_read_only.yaml       # Read-Only 1 (Low privilege: telemetry only)
+│   ├── example_read_only_02.yaml    # Read-Only 2 (Low privilege: telemetry only)
+│   ├── example_read_only_03.yaml    # Read-Only 3 (Low privilege: telemetry only)
+│   └── example_read_only_04.yaml    # Read-Only 4 (Low privilege: telemetry only)
 │
 ├── roles/                           # Authoritative role → capability boundaries
 │   ├── role_map.yaml                # Single source of truth for all privilege rules
@@ -57,17 +61,24 @@ security-agent/
 │   ├── recommender.py               # build_recommendations() — structured fix-it advice
 │   └── cli.py                       # deploy-gate CLI (typer): exit 0 pass / 1 fail / 2 auth
 │
-├── updates/                         # Demo update manifests
-│   ├── update_v4.2.0_batch.yaml     # Clean batch push — all 3 devices pass
+├── updates/                         # Demo update manifests & edge-case payloads (×10 files)
+│   ├── update_v4.2.0.yaml           # Clean field_tech update (PASS)
+│   ├── update_v4.2.0_batch.yaml     # Clean batch push — all devices pass
 │   ├── update_v4.2.1.yaml           # Unsafe single push — monitor role rejected
-│   └── update_batch_demo.yaml       # Mixed demo: 1 pass (field_tech), 2 fail
+│   ├── update_batch_demo.yaml       # Mixed demo: 1 pass (field_tech), 6 fail (monitors/read-only)
+│   ├── update_edge_bad_version.yaml # Edge Case: Unsupported schema version bump (v9.9.9)
+│   ├── update_edge_corrupted_yaml.yaml # Edge Case: Tab indentation / YAML syntax error
+│   ├── update_edge_downgrade.yaml   # Edge Case: Capability reduction / permission tightening
+│   ├── update_edge_duplicate_caps.yaml # Edge Case: Duplicate capabilities in template
+│   ├── update_edge_empty_caps.yaml  # Edge Case: Empty capability_set (schema error)
+│   └── update_edge_role_escalation.yaml # Edge Case: Unauthorised role escalation
 │
-├── batch_targets.yaml               # Fleet roster consumed by batch_dispatcher.py
+├── batch_targets.yaml               # Fleet roster (7 devices) consumed by batch_dispatcher.py
 ├── batch_dispatcher.py              # FastAPI service on :8743 — runs gate for every device
 ├── batch_push_client.py             # CLI client — uploads an update file to the dispatcher
-├── launch_devices.py                # Spawns all 3 simulated agent processes
+├── launch_devices.py                # Spawns all 7 simulated agent processes (ports 8082-8088)
 │
-├── tests/                           # pytest suite — 125 tests, all passing
+├── tests/                           # pytest suite — 139 tests, all passing
 │   ├── conftest.py
 │   ├── test_role_validator.py
 │   ├── test_manifest_schema.py
@@ -79,7 +90,8 @@ security-agent/
 │   ├── test_recommendations_endpoint.py
 │   ├── test_recommender.py
 │   ├── test_status_endpoint.py
-│   └── test_operator_edge_cases.py
+│   ├── test_operator_edge_cases.py
+│   └── test_edge_case_updates.py
 │
 └── pyproject.toml
 ```
@@ -190,7 +202,7 @@ The three categories caught per-device:
 
 All other exception types still propagate loudly so unexpected failures are
 never silently swallowed. This behaviour is covered by the
-`tests/test_operator_edge_cases.py` suite (16 tests).
+`tests/test_operator_edge_cases.py` and `tests/test_edge_case_updates.py` suites.
 
 ---
 
@@ -203,21 +215,25 @@ cd security-agent
 pip install -e ".[dev]"
 ```
 
-### 2 — Start all three simulated devices
+### 2 — Start the simulated fleet (7 Devices)
 
 ```bash
 python launch_devices.py
 ```
 
-This spawns three independent agent processes, each on its own port:
+This spawns seven independent agent processes, each on its own port:
 
-| Port | Device ID | Role |
-|---|---|---|
-| 8082 | `device-001-field` | `field_tech` |
-| 8083 | `device-099-monitor` | `monitor` |
-| 8084 | `device-042-readonly` | `read_only` |
+| Port | Device ID | Role | Permitted Capabilities |
+|---|---|---|---|
+| 8082 | `device-001-field` | `field_tech` | `telemetry_collect`, `diagnostics_run`, `update_receive`, `sensitive_data_read` |
+| 8083 | `device-099-monitor` | `monitor` | `telemetry_collect`, `diagnostics_run` |
+| 8085 | `device-098-monitor` | `monitor` | `telemetry_collect`, `diagnostics_run` |
+| 8084 | `device-042-readonly` | `read_only` | `telemetry_collect` |
+| 8086 | `device-043-readonly` | `read_only` | `telemetry_collect` |
+| 8087 | `device-044-readonly` | `read_only` | `telemetry_collect` |
+| 8088 | `device-045-readonly` | `read_only` | `telemetry_collect` |
 
-Press **Ctrl+C** to stop all three agents.
+Press **Ctrl+C** to stop all agents.
 
 ### 3 — Open the device dashboards
 
@@ -225,7 +241,11 @@ While `launch_devices.py` is running, open any device's live status page:
 
 - http://127.0.0.1:8082/ — `device-001-field` · `field_tech`
 - http://127.0.0.1:8083/ — `device-099-monitor` · `monitor`
+- http://127.0.0.1:8085/ — `device-098-monitor` · `monitor`
 - http://127.0.0.1:8084/ — `device-042-readonly` · `read_only`
+- http://127.0.0.1:8086/ — `device-043-readonly` · `read_only`
+- http://127.0.0.1:8087/ — `device-044-readonly` · `read_only`
+- http://127.0.0.1:8088/ — `device-045-readonly` · `read_only`
 
 Each page auto-refreshes every 3 s. A red **BLOCKED** banner appears when the
 last push was rejected for that device; it clears when a clean push is applied.
@@ -251,12 +271,6 @@ Returns:
   "last_rejection": null
 }
 ```
-
-`manifest_last_modified` is read from the file's mtime at request time — it
-updates automatically after a manifest swap without restarting the agent.
-`last_rejection` is `null` when no rejection sidecar exists; it contains the
-full `violations` and `recommendations` payload when a push has been rejected
-for this device and not yet cleared by a subsequent passing push.
 
 ```
 GET http://127.0.0.1:8082/healthz
@@ -291,14 +305,11 @@ The dispatcher listens on `http://127.0.0.1:8743`.
 ### Push an update
 
 ```bash
-# Terminal 2
+# Terminal 2: Clean push
 python batch_push_client.py updates/update_v4.2.0_batch.yaml
-```
 
-Or use the default mixed-result demo file (1 pass, 2 fail):
-
-```bash
-python batch_push_client.py
+# Terminal 2: Mixed push
+python batch_push_client.py updates/update_batch_demo.yaml
 ```
 
 The fleet roster is defined in `batch_targets.yaml`. Per-device results
@@ -358,7 +369,7 @@ cd security-agent
 pytest
 ```
 
-**Current result: 125 tests, all passing.**
+**Current result: 139 tests, all passing in ~1.1s.**
 
 | Test file | Coverage |
 |---|---|
@@ -373,88 +384,45 @@ pytest
 | `test_recommendations_endpoint.py` | `GET /recommendations` — empty sentinel, post-rejection content, clean-push clears list |
 | `test_status_endpoint.py` | `/status` fields/types/values, `manifest_last_modified` after swap, `last_rejection` sidecar lifecycle, HTML dashboard |
 | `test_operator_edge_cases.py` | Operator hardening: bad manifest paths, malformed YAML, missing schema fields, duplicate capabilities, stale rejection sidecar recovery, same-role multi-version fleets, capability downgrade, concurrent atomic writes |
-
-The `test_operator_edge_cases.py` suite (16 tests) is specifically designed to
-cover real-world misconfigurations beyond the happy path. It confirms that
-missing files, syntax errors, empty capability sets, and duplicate capability
-entries all produce clean structured error results rather than uncaught
-exceptions, and that concurrent pushes never produce a corrupt manifest on disk.
+| `test_edge_case_updates.py` | Dual-path gate and CLI runner verification across all 6 edge-case update manifest files |
 
 ---
 
 ## Demo scenarios
 
-### Scenario A — Clean fleet-wide update (all 3 devices pass)
+### Scenario A — Clean fleet-wide update (all 7 devices pass)
 
 Update file: `updates/update_v4.2.0_batch.yaml`
-
-This manifest only asserts `telemetry_collect` — a capability permitted by
-every role. All three devices pass the gate and their manifests are updated to
-`fleet_schema_version: "4.2.0"`.
 
 ```bash
 python batch_dispatcher.py                                           # Terminal 1
 python batch_push_client.py updates/update_v4.2.0_batch.yaml        # Terminal 2
 ```
 
-Expected output:
+Expected output: `Applied: 7 | Rejected: 0 | Errored: 0 | Total: 7`
 
-```
-  DEVICE ID                    ROLE           RESULT    ACTION
-  device-001-field             field_tech     [PASS]    APPLIED
-  device-099-monitor           monitor        [PASS]    APPLIED
-  device-042-readonly          read_only      [PASS]    APPLIED
-  Applied: 3   Rejected: 0   Errored: 0   Total: 3
-```
+### Scenario B — Mixed fleet update (1 pass, 6 fail with fix recommendations)
 
-### Scenario B — Unsafe update (role violation, rejected with fix suggestion)
-
-Update file: `updates/update_v4.2.1.yaml`
-
-This manifest requests `update_receive` for a `monitor`-role device. The
-`monitor` role's maximum capability set is `{telemetry_collect, diagnostics_run}`
-— `update_receive` is not permitted. The gate rejects the push, the device
-manifest is never touched, and a structured recommendation is returned.
-
-Check it directly with the CLI:
-
-```bash
-deploy-gate check \
-  --current  manifests/example_monitor.yaml \
-  --proposed updates/update_v4.2.1.yaml
-```
-
-Expected output:
-
-```
-GATE FAIL — violations detected:
-  • Role 'monitor' does not permit the following capabilities: ['update_receive'].
-    Remove them from capability_set or use a role that allows them.
-```
-
-Exit code: `1`
-
-Or push it through the batch dispatcher to see the full recommendation:
+Update file: `updates/update_batch_demo.yaml`
 
 ```bash
 python batch_push_client.py updates/update_batch_demo.yaml
 ```
 
-Expected output (mixed fleet — 1 pass, 2 fail):
+Expected output: `Applied: 1 (field_tech) | Rejected: 6 (monitors/read-only) | Errored: 0 | Total: 7`
 
-```
-  DEVICE ID                    ROLE           RESULT    ACTION
-  device-001-field             field_tech     [PASS]    APPLIED
-  device-099-monitor           monitor        [FAIL]    REJECTED
-      FIX: Remove capability 'update_receive' from the capability_set ...
-  device-042-readonly          read_only      [FAIL]    REJECTED
-      FIX: Remove capabilities 'diagnostics_run', 'update_receive' from ...
-  Applied: 1   Rejected: 2   Errored: 0   Total: 3
-```
+### Scenario C — Live operator edge cases
 
-After the rejection, the `monitor` device's dashboard (`http://127.0.0.1:8083/`)
-will display the **BLOCKED** banner until a corrected update is pushed and
-accepted.
+The `updates/` directory contains dedicated manifests to demonstrate real-world failure modes:
+
+| Scenario / Command | Edge-Case Manifest | Expected Outcome |
+|---|---|---|
+| `python batch_push_client.py updates/update_edge_corrupted_yaml.yaml` | `update_edge_corrupted_yaml.yaml` | `SKIPPED / ERROR` (Tab syntax error caught without crashing fleet) |
+| `python batch_push_client.py updates/update_edge_duplicate_caps.yaml` | `update_edge_duplicate_caps.yaml` | `SKIPPED / ERROR` (Duplicate capabilities caught by schema validator) |
+| `python batch_push_client.py updates/update_edge_empty_caps.yaml` | `update_edge_empty_caps.yaml` | `SKIPPED / ERROR` (Empty capability set caught by Pydantic schema) |
+| `python batch_push_client.py updates/update_edge_bad_version.yaml` | `update_edge_bad_version.yaml` | `REJECTED / FAIL` (Unsupported schema version `v9.9.9` blocked by Gate 1) |
+| `python batch_push_client.py updates/update_edge_role_escalation.yaml` | `update_edge_role_escalation.yaml` | `REJECTED / FAIL` (Unauthorised role escalation from `read_only` to `field_tech`) |
+| `python batch_push_client.py updates/update_edge_downgrade.yaml` | `update_edge_downgrade.yaml` | `APPLIED / PASS` (Privilege reduction / tightening passes cleanly) |
 
 ---
 

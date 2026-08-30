@@ -1,0 +1,12 @@
+# Edge-case test update: Duplicate capabilities in capability_set
+# Demonstrates Pydantic schema validation: catches duplicate entries before
+# reaching the deploy gate, reporting a clean schema error per device.
+
+fleet_schema_version: "4.2.0"
+device_id: "__BATCH_PLACEHOLDER__"
+device_owner_role: "__BATCH_PLACEHOLDER__"
+capability_set:
+  - telemetry_collect
+  - diagnostics_run
+  - telemetry_collect
+environment: "production"

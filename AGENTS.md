@@ -171,7 +171,7 @@ cd <project-root>
 pytest
 ```
 
-The 125 tests in this repo validate the reference implementation's specific
+The 139 tests in this repo validate the reference implementation's specific
 roles (field_tech, monitor, read_only). They will not pass unmodified against a
 new domain. After substituting your own roles and capabilities, update the
 fixtures in tests/conftest.py to mirror your new roles, then confirm your

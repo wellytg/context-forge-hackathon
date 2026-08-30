@@ -1,0 +1,6 @@
+fleet_schema_version: 4.2.0
+device_id: device-044-readonly
+device_owner_role: read_only
+capability_set:
+- telemetry_collect
+environment: production

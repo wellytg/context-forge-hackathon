@@ -1,0 +1,10 @@
+# Edge-case test update: Corrupted YAML syntax (tab indentation)
+# Demonstrates per-device error isolation: dispatcher catches yaml.YAMLError
+# and records status="SKIPPED", result="ERROR" rather than crashing the batch.
+
+fleet_schema_version: "4.2.0"
+device_id: "__BATCH_PLACEHOLDER__"
+device_owner_role: "__BATCH_PLACEHOLDER__"
+capability_set:
+	- telemetry_collect
+environment: "production"

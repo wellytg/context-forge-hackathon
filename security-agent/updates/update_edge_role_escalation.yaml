@@ -1,0 +1,23 @@
+# Edge-case test update: Unauthorised role escalation
+# A read_only device is proposed as field_tech with the full field_tech
+# capability_set (telemetry_collect + diagnostics_run + update_receive +
+# sensitive_data_read).
+#
+# Expected gate result: FAIL — two violations:
+#   1. device_owner_role changed without --allow-role-change
+#   2. update_receive + sensitive_data_read + diagnostics_run are outside
+#      read_only's permitted set (if the gate evaluates against the proposed
+#      role, only violation #2 applies when allow_role_change is False and the
+#      gate still checks the proposed role boundary; combined, both surface).
+#
+# Demonstrates Gate 1 blocking a privilege escalation attempt.
+
+fleet_schema_version: "4.2.0"
+device_id: "__BATCH_PLACEHOLDER__"
+device_owner_role: "__BATCH_PLACEHOLDER__"
+capability_set:
+  - telemetry_collect
+  - diagnostics_run
+  - update_receive
+  - sensitive_data_read
+environment: "production"

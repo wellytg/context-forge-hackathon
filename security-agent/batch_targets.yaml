@@ -1,23 +1,40 @@
-# Batch Push Target List
-#
-# Represents the fleet roster that will receive a universal update push.
-# Each entry identifies the physical device, the role it holds, the current
-# deployed manifest (the "before" state), and the proposed update manifest
-# (the "after" the security engineer is trying to push).
-#
-# The deploy-gate agent will check EVERY device independently.  Devices whose
-# role boundary is exceeded by the proposed update are REJECTED — the current
-# manifest is never touched for those devices.
+# Fleet Target Roster
+# ===========================================================================
+# Maps each simulated device ID to its role and on-disk manifest path.
+# Used by batch_dispatcher.py to discover targets for fleet updates.
+# ===========================================================================
+
+version: "1.0"
+description: "Development fleet target roster (7 devices)"
 
 batch:
-  - device_id: "device-001-field"
-    role: "field_tech"
-    current_manifest: "manifests/example_field_tech.yaml"
+  # 1 Field Technician (High Privilege)
+  - device_id: device-001-field
+    role: field_tech
+    current_manifest: manifests/example_field_tech.yaml
 
-  - device_id: "device-099-monitor"
-    role: "monitor"
-    current_manifest: "manifests/example_monitor.yaml"
+  # 2 Monitors (Mid Privilege: telemetry + diagnostics)
+  - device_id: device-099-monitor
+    role: monitor
+    current_manifest: manifests/example_monitor.yaml
 
-  - device_id: "device-042-readonly"
-    role: "read_only"
-    current_manifest: "manifests/example_read_only.yaml"
+  - device_id: device-098-monitor
+    role: monitor
+    current_manifest: manifests/example_monitor_02.yaml
+
+  # 4 Read-Only Agents (Low Privilege: telemetry only)
+  - device_id: device-042-readonly
+    role: read_only
+    current_manifest: manifests/example_read_only.yaml
+
+  - device_id: device-043-readonly
+    role: read_only
+    current_manifest: manifests/example_read_only_02.yaml
+
+  - device_id: device-044-readonly
+    role: read_only
+    current_manifest: manifests/example_read_only_03.yaml
+
+  - device_id: device-045-readonly
+    role: read_only
+    current_manifest: manifests/example_read_only_04.yaml

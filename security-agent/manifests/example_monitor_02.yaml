@@ -1,7 +1,6 @@
 fleet_schema_version: 4.2.0
-device_id: device-099-monitor
+device_id: device-098-monitor
 device_owner_role: monitor
 capability_set:
-  - telemetry_collect
-  - diagnostics_run
+- telemetry_collect
 environment: production
